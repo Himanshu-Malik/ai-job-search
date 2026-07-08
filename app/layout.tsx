@@ -23,6 +23,9 @@ export const metadata: Metadata = {
     'Describe your ideal job and AI finds the best matches for you.',
   keywords: ['jobs', 'ai', 'search', 'india', 'tech', 'remote', 'startup'],
   authors: [{ name: 'AI Job Search' }],
+  icons: {
+    icon: '/favicon.svg?v=1',
+  },
   openGraph: {
     title: 'AI Job Search — Find your next role with AI',
     description: 'Search thousands of tech jobs in India using natural language.',
