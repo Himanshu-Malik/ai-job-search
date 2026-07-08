@@ -16,8 +16,8 @@ const ExplainSchema = z.object({
     type: z.string(),
     description: z.string(),
     skills: z.array(z.string()),
-    salary_min: z.number().optional(),
-    salary_max: z.number().optional(),
+    salary_min: z.number().nullable().optional(),
+    salary_max: z.number().nullable().optional(),
     similarity: z.number().optional(),
   }),
 })
@@ -25,7 +25,6 @@ const ExplainSchema = z.object({
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const parsed = ExplainSchema.safeParse(body)
-
   if (!parsed.success) {
     return new Response(
       JSON.stringify({ error: 'Invalid request' }),
