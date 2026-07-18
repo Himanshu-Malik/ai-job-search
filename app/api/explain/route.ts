@@ -8,7 +8,7 @@ const anthropic = new Anthropic({
 })
 
 const ExplainSchema = z.object({
-  query: z.string().min(2),
+  query: z.string().optional().default(''),
   job: z.object({
     title: z.string(),
     company: z.string(),
@@ -22,6 +22,56 @@ const ExplainSchema = z.object({
   }),
 })
 
+const ExplainResponseSchema = z.object({
+  summary: z.string().trim().min(1),
+  matchScore: z.number().min(0).max(100),
+  whyMatch: z.array(z.string().trim().min(1)),
+  missingAreas: z.array(z.string().trim().min(1)),
+  learningPlan: z.array(z.string().trim().min(1)),
+  jobHighlights: z.array(z.string().trim().min(1)),
+})
+
+type ExplainResponse = z.infer<typeof ExplainResponseSchema>
+
+function buildFallbackResponse(
+  inferredScore: number,
+  job: z.infer<typeof ExplainSchema>['job']
+): ExplainResponse {
+  return {
+    summary: `This role is a ${inferredScore}% match based on job requirements, your profile context, and the skills listed in the description.`,
+    matchScore: inferredScore,
+    whyMatch: [
+      `Core stack alignment with ${job.skills.slice(0, 3).join(', ') || 'the required skills'}.`,
+      `Role context fits ${job.type} work style and ${job.location} preference signals.`,
+    ],
+    missingAreas: ['Some required tools or depth may need stronger evidence.', 'Competition may require portfolio-level examples.'],
+    learningPlan: ['Strengthen one missing skill with a mini project.', 'Practice interview-ready examples mapped to this role.'],
+    jobHighlights: [job.title, `${job.company} in ${job.location}`],
+  }
+}
+
+function extractTextContent(content: Array<{ type: string; text?: string }>): string {
+  return content
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+function extractJsonObject(text: string): string {
+  const fenced = text.match(/```json\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    return fenced[1].trim()
+  }
+
+  const first = text.indexOf('{')
+  const last = text.lastIndexOf('}')
+  if (first !== -1 && last !== -1 && last > first) {
+    return text.slice(first, last + 1)
+  }
+
+  return text
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const parsed = ExplainSchema.safeParse(body)
@@ -33,38 +83,46 @@ export async function POST(req: NextRequest) {
   }
 
   const { query, job } = parsed.data
+  const normalizedQuery = query.trim()
+  const effectiveQuery = normalizedQuery || 'resume profile'
+  const inferredScore = job.similarity
+    ? Math.max(0, Math.min(100, Math.round(job.similarity * 100)))
+    : 60
 
   // Check Redis cache first — explanations are expensive
   // Cache key includes both job title + query so same job
   // searched with different queries gets different explanations
-  const cacheKey = `explain:${job.title}:${job.company}:${query}`
+  const cacheKey = `explain:v2:${job.title}:${job.company}:${effectiveQuery}`
     .toLowerCase().replace(/\s+/g, '-').slice(0, 200)
 
   try {
-    const cached = await redis.get<string>(cacheKey)
+    const cached = await redis.get<unknown>(cacheKey)
     if (cached) {
-      // Return cached explanation as a plain stream
-      return new Response(cached, {
-        headers: {
-          'Content-Type': 'text/plain',
-          'X-Cached': 'true',
-        },
-      })
+      if (typeof cached === 'string') {
+        // Graceful read for old cache entries where explanation was plain text.
+        const fallbackFromText = buildFallbackResponse(inferredScore, job)
+        return Response.json({
+          ...fallbackFromText,
+          summary: cached.trim() || fallbackFromText.summary,
+          cached: true,
+        })
+      }
+
+      const parsedCached = ExplainResponseSchema.safeParse(cached)
+      if (parsedCached.success) {
+        return Response.json({ ...parsedCached.data, cached: true })
+      }
     }
   } catch { /* skip cache on error */ }
 
-  // Build the prompt — specific and structured gives better output
+  // Build a structured prompt so UI can show sections consistently.
   const salaryText = job.salary_min && job.salary_max
     ? `₹${(job.salary_min/100000).toFixed(0)}–${(job.salary_max/100000).toFixed(0)} LPA`
     : 'not disclosed'
 
-  const matchPct = job.similarity
-    ? `${Math.round(job.similarity * 100)}%`
-    : 'strong'
+  const prompt = `User context: "${effectiveQuery}"
 
-  const prompt = `A job seeker searched for: "${query}"
-
-Here is a job that matched with a ${matchPct} similarity score:
+Here is a job with an estimated match score of ${inferredScore}%:
 
 Job Title: ${job.title}
 Company: ${job.company}  
@@ -73,63 +131,55 @@ Salary: ${salaryText}
 Skills required: ${job.skills.join(', ')}
 Description: ${job.description}
 
-In 3–4 concise sentences, explain specifically why this job matches what the person is looking for. 
-Be direct and specific — mention actual skills, location preferences, and work style from their query.
-End with one honest note about anything that might not perfectly align (if any).
-Do not use bullet points. Write in a warm, helpful tone like a knowledgeable career advisor.`
+Return ONLY valid JSON in this exact shape:
+{
+  "summary": "2-4 sentence explanation focused on the job description",
+  "matchScore": ${inferredScore},
+  "whyMatch": ["specific reason", "specific reason"],
+  "missingAreas": ["specific gap", "specific gap"],
+  "learningPlan": ["what to learn next", "what to learn next"],
+  "jobHighlights": ["key highlight", "key highlight"]
+}
 
-  // Stream the response using ReadableStream
-  // This is what makes words appear one by one in the UI
-  const stream = new ReadableStream({
-    async start(controller) {
-      let fullText = ''
+Rules:
+- Keep each array between 2 and 4 items.
+- Be concrete, reference job description details.
+- If data is missing, still provide best-effort concise output.`
 
-      try {
-        // Claude streaming API
-        const claudeStream = anthropic.messages.stream({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 250,
-          messages: [{ role: 'user', content: prompt }],
-        })
+  try {
+    const completion = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 650,
+      messages: [{ role: 'user', content: prompt }],
+    })
 
-        // Each chunk is a few characters/words — send immediately
-        for await (const chunk of claudeStream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            const text = chunk.delta.text
-            fullText += text
-            // Encode and send chunk to browser
-            controller.enqueue(new TextEncoder().encode(text))
-          }
-        }
+    const rawText = extractTextContent(
+      completion.content as Array<{ type: string; text?: string }>
+    )
 
-        // Cache the full explanation for 24 hours
-        // Same query + job won't call Claude again
-        redis.set(cacheKey, fullText, { ex: 60 * 60 * 24 })
-          .catch(() => {}) // fire and forget
+    const parsedJson = JSON.parse(extractJsonObject(rawText)) as unknown
+    const validated = ExplainResponseSchema.safeParse(parsedJson)
 
-      } catch (err) {
-        console.error('Claude stream error:', err)
-        controller.enqueue(
-          new TextEncoder().encode(
-            'Unable to generate explanation. Please try again.'
-          )
-        )
-      } finally {
-        controller.close()
-      }
-    },
-  })
+    const fallback = buildFallbackResponse(inferredScore, job)
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'X-Cached': 'false',
-      // These headers enable streaming in the browser
-      'Transfer-Encoding': 'chunked',
-      'Cache-Control': 'no-cache',
-    },
-  })
+    const response = validated.success ? validated.data : fallback
+
+    redis.set(cacheKey, response, { ex: 60 * 60 * 24 }).catch(() => {})
+
+    return Response.json({ ...response, cached: false })
+  } catch (err) {
+    console.error('Explain generation error:', err)
+    return Response.json(
+      {
+        summary: 'Unable to generate explanation right now. Please try again.',
+        matchScore: inferredScore,
+        whyMatch: [],
+        missingAreas: [],
+        learningPlan: [],
+        jobHighlights: [],
+        cached: false,
+      },
+      { status: 200 }
+    )
+  }
 }

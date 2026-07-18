@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { Sora, DM_Sans } from 'next/font/google'
+import Providers from '@/components/Providers'
+import { auth } from '@/lib/auth'
 import './globals.css'
 
 const sora = Sora({
@@ -33,14 +35,16 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const session = await auth()
+
   return (
     <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><Providers session={session}>{children}</Providers></body>
     </html>
   )
 }

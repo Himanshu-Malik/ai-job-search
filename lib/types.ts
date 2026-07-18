@@ -21,3 +21,22 @@ export interface SearchResponse {
   cached: boolean
   query: string
 }
+
+
+export interface UserProfile {
+  id: string
+  user_id: string
+  email: string
+  name?: string
+  avatar_url?: string
+  extracted_name?: string
+  current_position?: string      // ← matches the DB column name
+  experience_years?: number
+  summary?: string
+  skills: string[]
+  preferred_location?: string
+  preferred_type?: string
+  salary_min?: number
+  salary_max?: number
+  onboarding_complete: boolean
+}

@@ -11,45 +11,72 @@ interface Props {
 
 type Status = 'loading' | 'streaming' | 'done' | 'error'
 
+type ExplainPayload = {
+  summary: string
+  matchScore: number
+  whyMatch: string[]
+  missingAreas: string[]
+  learningPlan: string[]
+}
+
 export default function MatchExplanation({ job, query }: Props) {
   const [text, setText] = useState('')
   const [status, setStatus] = useState<Status>('loading')
-  const hasFetched = useRef(false)
+  const [insights, setInsights] = useState<ExplainPayload | null>(null)
+  const runIdRef = useRef(0)
 
   useEffect(() => {
-    if (hasFetched.current) return
-    hasFetched.current = true
-    fetchExplanation()
-  }, [job.id, query])
+    const controller = new AbortController()
+    const runId = runIdRef.current + 1
+    runIdRef.current = runId
 
-  async function fetchExplanation() {
-    try {
-      const res = await fetch('/api/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, job }),
-      })
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-      if (!res.ok) throw new Error('Failed')
-      if (!res.body) throw new Error('No stream')
+    const load = async () => {
+      setStatus('loading')
+      setText('')
+      setInsights(null)
 
-      setStatus('streaming')
+      try {
+        const res = await fetch('/api/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, job }),
+          signal: controller.signal,
+        })
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
+        if (!res.ok) throw new Error('Failed')
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        setText(prev => prev + chunk)
+        const data = (await res.json()) as ExplainPayload
+        const summary = data.summary?.trim() || 'We could not generate a detailed explanation for this role right now.'
+
+        if (runId !== runIdRef.current) return
+
+        setInsights(data)
+        setStatus('streaming')
+
+        for (let index = 1; index <= summary.length; index += 4) {
+          if (runId !== runIdRef.current || controller.signal.aborted) return
+          setText(summary.slice(0, index))
+          await sleep(18)
+        }
+
+        if (runId !== runIdRef.current || controller.signal.aborted) return
+        setText(summary)
+        setStatus('done')
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (runId !== runIdRef.current) return
+        setStatus('error')
       }
-
-      setStatus('done')
-    } catch {
-      setStatus('error')
     }
-  }
+
+    void load()
+
+    return () => {
+      controller.abort()
+    }
+  }, [job, query])
 
   return (
     <div className="flex items-start gap-3">
@@ -95,14 +122,23 @@ export default function MatchExplanation({ job, query }: Props) {
 
         {/* Streaming / done text */}
         {(status === 'streaming' || status === 'done') && (
-          <p className="text-sm text-gray-600 leading-relaxed">
-            {text}
-            {/* Blinking cursor */}
-            {status === 'streaming' && (
-              <span className="inline-block w-0.5 h-4 bg-[#2563EB] ml-0.5 
-                align-middle animate-blink rounded-sm" />
-            )}
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 leading-relaxed">
+              {text}
+              {status === 'streaming' && (
+                <span className="inline-block w-0.5 h-4 bg-[#2563EB] ml-1 align-middle animate-pulse" />
+              )}
+            </p>
+            {insights?.whyMatch?.length ? (
+              <ul className="space-y-1.5">
+                {insights.whyMatch.slice(0, 2).map((item) => (
+                  <li key={item} className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         )}
 
         {/* Error state */}
