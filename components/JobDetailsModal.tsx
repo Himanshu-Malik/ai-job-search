@@ -120,14 +120,14 @@ export default function JobDetailsModal({ job, query, onClose }: Props) {
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[70] bg-slate-950/70 backdrop-blur-sm p-3 sm:p-6"
+        className="fixed inset-0 z-[70] bg-slate-950/70 backdrop-blur-sm p-3 sm:p-6 safe-area-pt safe-area-pb safe-area-px"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
       >
         <motion.div
-          className="mx-auto mt-3 sm:mt-8 w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-3xl border border-white/20 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 shadow-2xl"
+          className="mx-auto mt-3 sm:mt-8 w-full max-w-5xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-3xl border border-white/20 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 shadow-2xl"
           initial={{ opacity: 0, y: 28, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 18, scale: 0.98 }}

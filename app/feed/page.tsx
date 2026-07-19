@@ -213,15 +213,16 @@ export default function Home() {
     : 'resume profile match'
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-[100svh] min-h-[100dvh] bg-[#F8FAFC]">
       {/* ═══════════════════════════════════════════════════════════════
           HERO SECTION
           ═══════════════════════════════════════════════════════════════ */}
       <div
-        className="relative overflow-hidden bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] h-[100vh] flex items-center justify-center"
-        style={{ height: isCompressed ? 'auto' : '100vh', padding: isCompressed ? '3rem 1rem' : '' }}
+        className={`relative overflow-hidden bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] flex items-center justify-center ${
+          isCompressed ? 'py-12 px-4' : 'min-h-[100svh] min-h-[100dvh]'
+        }`}
       >
-        <div className="absolute inset-x-0 top-0 z-30 px-3 sm:px-6 py-3 sm:py-5">
+        <div className="absolute inset-x-0 top-0 z-30 safe-area-pt safe-area-px px-3 sm:px-6 py-3 sm:py-5">
           <div className="flex justify-end">
             <div className="origin-top-right scale-[0.92] sm:scale-100">
               <AuthButton />
@@ -248,7 +249,7 @@ export default function Home() {
           }} 
         />
 
-        <div className="relative w-full max-w-3xl mx-auto px-4 pt-12 sm:pt-16">
+        <div className="relative w-full max-w-3xl mx-auto px-4 pt-14 sm:pt-16 pb-8 sm:pb-10">
           <AnimatePresence>
             {viewState === 'home' && (
               <motion.div
@@ -399,7 +400,7 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════════════
           CONTENT SECTION
           ═══════════════════════════════════════════════════════════════ */}
-      <div className="max-w-3xl mx-auto px-4 pb-20">
+      <div className="max-w-3xl mx-auto px-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
         <AnimatePresence mode="wait">
           {/* Loading State */}
           {viewState === 'loading' && (

@@ -1,8 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/cron/sync-jobs",
+      "path": "/api/cron/sync-adzuna",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-greenhouse",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/prune-jobs",
+      "schedule": "15 4 */2 * *"
     }
   ]
 }

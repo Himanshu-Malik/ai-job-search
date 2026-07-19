@@ -52,8 +52,8 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F8FAFC]">
-      <section className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] flex items-center justify-center px-4 py-10">
+    <main className="min-h-[100svh] min-h-[100dvh] bg-[#F8FAFC] safe-area-px safe-area-pb">
+      <section className="relative min-h-[100svh] min-h-[100dvh] overflow-hidden bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] flex items-center justify-center px-4 py-10 safe-area-pt safe-area-pb">
         <div className="absolute inset-0 opacity-20">
           <div className="absolute top-20 left-16 w-80 h-80 bg-blue-500 rounded-full blur-3xl opacity-30" />
           <div className="absolute bottom-20 right-16 w-80 h-80 bg-cyan-400 rounded-full blur-3xl opacity-20" />
