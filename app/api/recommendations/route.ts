@@ -9,6 +9,9 @@ import {
 } from '@/lib/redis'
 import type { SearchResponse } from '@/lib/types'
 
+const DEFAULT_RECOMMENDATION_COUNT = Number(process.env.RECOMMENDATION_COUNT ?? 24)
+const RECOMMENDATION_CANDIDATE_COUNT = Number(process.env.RECOMMENDATION_CANDIDATE_COUNT ?? 60)
+
 type UserProfileRow = {
   summary: string | null
   raw_resume_text?: string | null
@@ -101,26 +104,38 @@ export async function GET() {
 
     let jobs: SearchResponse['jobs'] | null = null
     let jobsError: unknown = null
+    const targetCount = Math.max(12, Math.min(60, DEFAULT_RECOMMENDATION_COUNT))
+    const candidateThresholds = [0.25, 0.18, 0.12, 0]
 
-    const resumeFnResult = await supabaseAdmin.rpc('match_jobs_for_resume', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.25,
-      match_count: 12,
-    })
-
-    jobs = (resumeFnResult.data as SearchResponse['jobs'] | null) ?? null
-    jobsError = resumeFnResult.error
-
-    // Fallback for environments where only match_jobs exists or signatures differ.
-    if (jobsError) {
-      const fallbackResult = await supabaseAdmin.rpc('match_jobs', {
+    for (const threshold of candidateThresholds) {
+      const resumeFnResult = await supabaseAdmin.rpc('match_jobs_for_resume', {
         query_embedding: queryEmbedding,
-        match_threshold: 0.25,
-        match_count: 12,
+        match_threshold: threshold,
+        match_count: RECOMMENDATION_CANDIDATE_COUNT,
       })
 
-      jobs = (fallbackResult.data as SearchResponse['jobs'] | null) ?? null
-      jobsError = fallbackResult.error
+      jobs = (resumeFnResult.data as SearchResponse['jobs'] | null) ?? []
+      jobsError = resumeFnResult.error
+
+      // Fallback for environments where only match_jobs exists or signatures differ.
+      if (jobsError) {
+        const fallbackResult = await supabaseAdmin.rpc('match_jobs', {
+          query_embedding: queryEmbedding,
+          match_threshold: threshold,
+          match_count: RECOMMENDATION_CANDIDATE_COUNT,
+        })
+
+        jobs = (fallbackResult.data as SearchResponse['jobs'] | null) ?? []
+        jobsError = fallbackResult.error
+      }
+
+      if (jobsError) {
+        break
+      }
+
+      if ((jobs?.length ?? 0) >= targetCount) {
+        break
+      }
     }
 
     if (jobsError) {
@@ -128,7 +143,7 @@ export async function GET() {
     }
 
     const response: SearchResponse = {
-      jobs: jobs ?? [],
+      jobs: (jobs ?? []).slice(0, targetCount),
       cached: false,
       query: 'resume-profile',
     }

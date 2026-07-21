@@ -164,7 +164,7 @@ export default function Home() {
       const res = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, limit: 100 }),
       })
 
       if (!res.ok) throw new Error('Search failed')
